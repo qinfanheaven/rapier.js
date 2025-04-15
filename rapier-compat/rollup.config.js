@@ -31,12 +31,20 @@ const config = (dim) => ({
                     dest: `./pkg${dim}/`,
                     transform(content) {
                         let config = JSON.parse(content.toString());
-                        config.name = `@dimforge/rapier${dim}-compat`;
+                        config.name = `@kuzi/rapier${dim}`;
                         config.description +=
                             " Compatibility package with inlined webassembly as base64.";
                         config.types = "rapier.d.ts";
                         config.main = "rapier.cjs.js";
                         config.module = "rapier.es.js";
+                        config.exports = {
+                            ".": {
+                                "browser": "./rapier.es.js",
+                                "import": "./rapier.cjs.js",
+                                "require": "./rapier.cjs.js",
+                                "types": "./rapier.d.ts"
+                            }
+                        }
                         // delete config.module;
                         config.files = ["*"];
                         return JSON.stringify(config, undefined, 2);
