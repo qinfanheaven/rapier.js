@@ -1,5 +1,5 @@
 // @ts-ignore
-import wasmInit from "../pkg3d/rapier_wasm3d";
+import wasmInit from "../pkg/rapier_wasm3d";
 
 /**
  * Initializes RAPIER.
