@@ -14,6 +14,7 @@ import {
     Ball,
     ShapeType,
     Capsule,
+    Voxels,
     TriMesh,
     Polyline,
     Heightfield,
@@ -109,7 +110,7 @@ export type ColliderHandle = number;
 export class Collider {
     private colliderSet: ColliderSet; // The Collider won't need to free this.
     readonly handle: ColliderHandle;
-    private _shape: Shape;
+    private _shape: Shape; // TODO: deprecate/remove this since it isn’t a reliable way of getting the latest shape properties.
     private _parent: RigidBody | null;
 
     constructor(
@@ -147,6 +148,18 @@ export class Collider {
     }
 
     /**
+     * Set the internal cached JS shape to null.
+     *
+     * This can be useful if you want to free some memory (assuming you are not
+     * holding any other references to the shape object), or in order to force
+     * the recalculation of the JS shape (the next time the `shape` getter is
+     * accessed) from the WASM source of truth.
+     */
+    public clearShapeCache() {
+        this._shape = null;
+    }
+
+    /**
      * Checks if this collider is still valid (i.e. that it has
      * not been deleted from the collider set yet).
      */
@@ -155,7 +168,7 @@ export class Collider {
     }
 
     /**
-     * The world-space translation of this rigid-body.
+     * The world-space translation of this collider.
      */
     public translation(): Vector {
         return VectorOps.fromRaw(
@@ -164,11 +177,33 @@ export class Collider {
     }
 
     /**
-     * The world-space orientation of this rigid-body.
+     * The translation of this collider relative to its parent rigid-body.
+     *
+     * Returns `null` if the collider doesn’t have a parent rigid-body.
+     */
+    public translationWrtParent(): Vector | null {
+        return VectorOps.fromRaw(
+            this.colliderSet.raw.coTranslationWrtParent(this.handle),
+        );
+    }
+
+    /**
+     * The world-space orientation of this collider.
      */
     public rotation(): Rotation {
         return RotationOps.fromRaw(
             this.colliderSet.raw.coRotation(this.handle),
+        );
+    }
+
+    /**
+     * The orientation of this collider relative to its parent rigid-body.
+     *
+     * Returns `null` if the collider doesn’t have a parent rigid-body.
+     */
+    public rotationWrtParent(): Rotation | null {
+        return RotationOps.fromRaw(
+            this.colliderSet.raw.coRotationWrtParent(this.handle),
         );
     }
 
@@ -180,7 +215,7 @@ export class Collider {
     }
 
     /**
-     * Sets whether or not this collider is a sensor.
+     * Sets whether this collider is a sensor.
      * @param isSensor - If `true`, the collider will be a sensor.
      */
     public setSensor(isSensor: boolean) {
@@ -578,7 +613,6 @@ export class Collider {
 
     /**
      * The type of the shape of this collider.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public shapeType(): ShapeType {
         return this.colliderSet.raw.coShapeType(
@@ -588,7 +622,6 @@ export class Collider {
 
     /**
      * The half-extents of this collider if it is a cuboid shape.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public halfExtents(): Vector {
         return VectorOps.fromRaw(
@@ -608,7 +641,6 @@ export class Collider {
 
     /**
      * The radius of this collider if it is a ball, cylinder, capsule, or cone shape.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public radius(): number {
         return this.colliderSet.raw.coRadius(this.handle);
@@ -625,7 +657,6 @@ export class Collider {
 
     /**
      * The radius of the round edges of this collider if it is a round cylinder.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public roundRadius(): number {
         return this.colliderSet.raw.coRoundRadius(this.handle);
@@ -642,7 +673,6 @@ export class Collider {
 
     /**
      * The half height of this collider if it is a cylinder, capsule, or cone shape.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public halfHeight(): number {
         return this.colliderSet.raw.coHalfHeight(this.handle);
@@ -658,9 +688,135 @@ export class Collider {
     }
 
     /**
+     * If this collider has a Voxels shape, this will mark the voxel at the
+     * given grid coordinates as filled or empty (depending on the `filled`
+     * argument).
+     *
+     * Each input value is assumed to be an integer.
+     *
+     * The operation is O(1), unless the provided coordinates are out of the
+     * bounds of the currently allocated internal grid in which case the grid
+     * will be grown automatically.
+     */
+    public setVoxel(
+        ix: number,
+        iy: number,
+        // #if DIM3
+        iz: number,
+        // #endif
+        filled: boolean,
+    ) {
+        this.colliderSet.raw.coSetVoxel(
+            this.handle,
+            ix,
+            iy,
+            // #if DIM3
+            iz,
+            // #endif
+            filled,
+        );
+        // We modified the shape, invalidate it to keep our cache
+        // up-to-date the next time the user requests the shape data.
+        // PERF: this isn’t ideal for performances as this adds a
+        //       hidden, non-constant, cost.
+        this._shape = null;
+    }
+
+    /**
+     * If this and `voxels2` are voxel colliders, and a voxel from `this` was
+     * modified with `setVoxel`, this will ensure that a
+     * moving object transitioning across the boundaries of these colliders
+     * won’t suffer from the "internal edges" artifact.
+     *
+     * The indices `ix, iy, iz` indicate the integer coordinates of the voxel in
+     * the local coordinate frame of `this`.
+     *
+     * If the voxels in `voxels2` live in a different coordinate space from `this`,
+     * then the `shift_*` argument indicate the distance, in voxel units, between
+     * the origin of `this` to the origin of `voxels2`.
+     *
+     * This method is intended to be called between `this` and all the other
+     * voxels colliders with a domain intersecting `this` or sharing a domain
+     * boundary. This is an incremental maintenance of the effect of
+     * `combineVoxelStates`.
+     */
+    public propagateVoxelChange(
+        voxels2: Collider,
+        ix: number,
+        iy: number,
+        // #if DIM3
+        iz: number,
+        // #endif
+        shift_x: number,
+        shift_y: number,
+        // #if DIM3
+        shift_z: number,
+        // #endif
+    ) {
+        this.colliderSet.raw.coPropagateVoxelChange(
+            this.handle,
+            voxels2.handle,
+            ix,
+            iy,
+            // #if DIM3
+            iz,
+            // #endif
+            shift_x,
+            shift_y,
+            // #if DIM3
+            shift_z,
+            // #endif
+        );
+        // We modified the shape, invalidate it to keep our cache
+        // up-to-date the next time the user requests the shape data.
+        // PERF: this isn’t ideal for performances as this adds a
+        //       hidden, non-constant, cost.
+        this._shape = null;
+    }
+
+    /**
+     * If this and `voxels2` are voxel colliders, this will ensure that a
+     * moving object transitioning across the boundaries of these colliders
+     * won’t suffer from the "internal edges" artifact.
+     *
+     * If the voxels in `voxels2` live in a different coordinate space from `this`,
+     * then the `shift_*` argument indicate the distance, in voxel units, between
+     * the origin of `this` to the origin of `voxels2`.
+     *
+     * This method is intended to be called once between all pairs of voxels
+     * colliders with intersecting domains or shared boundaries.
+     *
+     * If either voxels collider is then modified with `setVoxel`, the
+     * `propagateVoxelChange` method must be called to maintain the coupling
+     * between the voxels shapes after the modification.
+     */
+    public combineVoxelStates(
+        voxels2: Collider,
+        shift_x: number,
+        shift_y: number,
+        // #if DIM3
+        shift_z: number,
+        // #endif
+    ) {
+        this.colliderSet.raw.coCombineVoxelStates(
+            this.handle,
+            voxels2.handle,
+            shift_x,
+            shift_y,
+            // #if DIM3
+            shift_z,
+            // #endif
+        );
+        // We modified the shape, invalidate it to keep our cache
+        // up-to-date the next time the user requests the shape data.
+        // PERF: this isn’t ideal for performances as this adds a
+        //       hidden, non-constant, cost.
+        this._shape = null;
+    }
+
+    /**
      * If this collider has a triangle mesh, polyline, convex polygon, or convex polyhedron shape,
      * this returns the vertex buffer of said shape.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public vertices(): Float32Array {
         return this.colliderSet.raw.coVertices(this.handle);
@@ -669,7 +825,6 @@ export class Collider {
     /**
      * If this collider has a triangle mesh, polyline, or convex polyhedron shape,
      * this returns the index buffer of said shape.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public indices(): Uint32Array | undefined {
         return this.colliderSet.raw.coIndices(this.handle);
@@ -679,7 +834,6 @@ export class Collider {
      * If this collider has a heightfield shape, this returns the heights buffer of
      * the heightfield.
      * In 3D, the returned height matrix is provided in column-major order.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public heightfieldHeights(): Float32Array {
         return this.colliderSet.raw.coHeightfieldHeights(this.handle);
@@ -688,7 +842,6 @@ export class Collider {
     /**
      * If this collider has a heightfield shape, this returns the scale
      * applied to it.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public heightfieldScale(): Vector {
         let scale = this.colliderSet.raw.coHeightfieldScale(this.handle);
@@ -699,7 +852,6 @@ export class Collider {
     /**
      * If this collider has a heightfield shape, this returns the number of
      * rows of its height matrix.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public heightfieldNRows(): number {
         return this.colliderSet.raw.coHeightfieldNRows(this.handle);
@@ -708,7 +860,6 @@ export class Collider {
     /**
      * If this collider has a heightfield shape, this returns the number of
      * columns of its height matrix.
-     * @deprecated this field will be removed in the future, please access this field on `shape` member instead.
      */
     public heightfieldNCols(): number {
         return this.colliderSet.raw.coHeightfieldNCols(this.handle);
@@ -1226,6 +1377,26 @@ export class ColliderDesc {
         indices?: Uint32Array | null,
     ): ColliderDesc {
         const shape = new Polyline(vertices, indices);
+        return new ColliderDesc(shape);
+    }
+
+    /**
+     * Creates a new collider descriptor with a shape made of voxels.
+     *
+     * @param data - Defines the set of voxels. If this is a `Int32Array` then
+     *               each voxel is defined from its (signed) grid coordinates,
+     *               with 3 (resp 2) contiguous integers per voxel in 3D (resp 2D).
+     *               If this is a `Float32Array`, each voxel will be such that
+     *               they contain at least one point from this array (where each
+     *               point is defined from 3 (resp 2) contiguous numbers per point
+     *               in 3D (resp 2D).
+     * @param voxelSize - The size of each voxel.
+     */
+    public static voxels(
+        voxels: Float32Array | Int32Array,
+        voxelSize: Vector,
+    ): ColliderDesc {
+        const shape = new Voxels(voxels, voxelSize);
         return new ColliderDesc(shape);
     }
 

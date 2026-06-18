@@ -11,13 +11,13 @@ const config = (dim, features_postfix) => ({
     input: `builds/${features_postfix}/gen${dim}/rapier.ts`,
     output: [
         {
-            file: `builds/${features_postfix}/pkg/rapier.es.js`,
+            file: `builds/${features_postfix}/pkg/rapier.mjs`,
             format: "es",
             sourcemap: true,
             exports: "named",
         },
         {
-            file: `builds/${features_postfix}/pkg/rapier.cjs.js`,
+            file: `builds/${features_postfix}/pkg/rapier.cjs`,
             format: "cjs",
             sourcemap: true,
             exports: "named",
@@ -31,20 +31,19 @@ const config = (dim, features_postfix) => ({
                     dest: `builds/${features_postfix}/pkg/`,
                     transform(content) {
                         let config = JSON.parse(content.toString());
-                        config.name = `@kuzi/rapier${features_postfix}`;
+                        config.name = `@dimforge/rapier${features_postfix}-compat`;
                         config.description +=
                             " Compatibility package with inlined webassembly as base64.";
                         config.types = "rapier.d.ts";
-                        config.main = "rapier.cjs.js";
-                        config.module = "rapier.es.js";
+                        config.main = "rapier.cjs";
+                        config.module = "rapier.mjs";
                         config.exports = {
                             ".": {
-                                "browser": "./rapier.es.js",
-                                "import": "./rapier.cjs.js",
-                                "require": "./rapier.cjs.js",
-                                "types": "./rapier.d.ts"
-                            }
-                        }
+                                types: "./rapier.d.ts",
+                                require: "./rapier.cjs",
+                                import: "./rapier.mjs",
+                            },
+                        };
                         // delete config.module;
                         config.files = ["*"];
                         return JSON.stringify(config, undefined, 2);

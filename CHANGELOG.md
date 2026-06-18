@@ -1,3 +1,145 @@
+## 0.19.3 (05 Nov. 2025)
+
+- Significantly improve performances of `combineVoxelStates`.
+
+### 0.19.2 (17 Oct. 2025)
+
+- Fix bug where kinematic bodies would not wake up when setting its velocity.
+- Fix bug where slow-moving kinematic bodies would fall asleep.
+- Fix point-projection on voxels shapes.
+
+### 0.19.1 (03 Oct. 2025)
+
+### Modified
+
+- Update to Rapier 0.30.0. The only change is a [switch to a sparse storage](https://github.com/dimforge/parry/pull/380)
+  for the Voxels shapes. This allows support for orders of magnitudes larger maps without reaching the 4GB WASM memory
+  limit.
+
+### 0.19.0 (05 Sept. 2025)
+
+### Modified
+
+- Update to Rapier 0.29.0 which includes performance improvements for scenes involving a lot of contact constraints.
+  See https://github.com/dimforge/rapier/pull/876 for details.
+- Renamed the `RigidBody.invPrincipalInertiaSqrt` and `.effectiveWorldInvInertiaSqrt` methods to
+  `RigidBody.invPrincipalInertia` and `.effectiveWorldInvInertia` (removed the `Sqrt` suffix). These methods will now
+  return the actual inverse angular inertia matrix rather than its square root.
+- Removed methods related to the legacy PGS solver: `World.numAdditionalFrictionIterations`,
+  `switchToStandardPgsSolver`, `switchToSmallStepsPgsSolver`, `switchToSmallStepsPgsSolverWithoutWarmstart`.
+
+### 0.18.2 (13 August 2025)
+
+### Fixed
+
+- Fix rollup configuration adding `types: "./rapier.d.ts"` to the export config.
+
+### 0.18.1 (8 August 2025)
+
+### Modified
+
+- Update to Rapier 0.28.0 which includes performance improvements when CCD is active and when
+  the user applies modification to a collider or rigid-body.
+
+### Fix
+
+- Another attempt to fix bundlerless module import with rapier-compat.
+
+### 0.18.0 (24 July 2025)
+
+### Added
+
+- Add `World.timing*` functions to access the internal performances measurements if the internal
+  profiler is enabled with `World.profilerEnabled = true`.
+- Add `World.maxCcdSubsteps` to get/set the max number of CCD substeps run by the engine.
+
+### Fix
+
+- Fixed crash that would happen when removing colliders in a particular order (e.g. in the same order
+  as their insertion).
+
+### 0.18.0-beta.0 (12 July 2025)
+
+#### Modified
+
+- Update to Rapier 0.27.0-beta.1 which includes a fully reworked broad-phase tha supports scene queries.
+  This implies a performance gain on large scenes by avoiding the need to re-build the underlying acceleration
+  structure at each frame.
+- Un-deprecate methods for reading shape properties (for example `collider.radius()`). It turned out that these
+  methods are more convenient as they are guaranteed to always be in sync with rapier’s state on wasm.
+- Add `collider.translationWrtParent()` and `collider.rotationWrtParent()` to get the collider’s translation/rotation
+  relative to its parent rigid-body.
+
+#### Fix
+
+- rapier-compat top level javascript files extensions have been changed from `.cjs.js` and `.es.js` to `.cjs` and `mjs`
+  respectively. This results in better compatibility with NPM.
+
+### 0.17.3 (30 May 2025)
+
+#### Fix
+
+- The published package for 0.17.2 had a broken package.json. It is fixed on this release.
+
+### 0.17.2 (30 May 2025)
+
+#### Added
+
+- Added the function `RAPIER.reserveMemory` to instruct the internal allocator to pre-allocate more memory in preparation
+  for future operations. This typically called only once after initializing the WASM module.
+
+### 0.17.1 (23 May 2025)
+
+#### Added
+
+- Added optional arguments to `World.debugRender(filterFlags, filterPredicate)` to prevent some colliders from being
+  rendered.
+- Added `Collider.combineVoxelStates` to ensure two adjacent voxels colliders don’t suffer from the internal edges
+  problem, and `Collider.propagateVoxelChange` to maintain that coupling after modifications with `.setVoxel`.
+
+### 0.17.0 (16 May 2025)
+
+#### Fixed
+
+- Fix sensor events not triggering when hitting a voxels collider.
+
+#### Added
+
+- Added support for voxels colliders attached to dynamic rigid-bodies.
+- Added force calculation between colliding voxels/voxels and voxels/compound shapes.
+
+### 0.16.2 (5 May 2025)
+
+#### Fixed
+
+- Fixed infinite loop in `collider.setVoxel`.
+
+### 0.16.1 (2 May 2025)
+
+#### Added
+
+- Added `Collider.clearShapeCache` to release the reference to the JS shape stored in the collider, oor too force its
+  recomputation the next time the collider shape is accessed.
+- Added support for shape-casting involving Voxels colliders.
+- Added support for CCD involving Voxels colliders.
+
+### 0.16.0 (24 April 2025)
+
+#### Added
+
+- Added `ColliderDesc.voxels` to create a collider with a shape optimized for voxels.
+- Added `Collider.setVoxel` for adding or removing a voxel from a collider with a voxel shape.
+- Added the `Voxels` shape class.
+
+The support or voxels is still experimental. In particular the following features will currently **not** work on
+colliders with voxel shapes:
+
+- Voxels colliders attached to dynamic rigid-bodies will not run the automatic mass/angular inertia calculation.
+- Shape-casting on voxel shapes/colliders.
+- Collision-detection between two-voxels colliders, or a voxels collider and a mesh, polyline, or heightfield.
+
+See [parry#336](https://github.com/dimforge/parry/pull/336) for additional information.
+
 ### 0.15.1 (10 April 2025)
 
 #### Added

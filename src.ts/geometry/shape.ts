@@ -131,6 +131,11 @@ export abstract class Shape {
                 normal = VectorOps.fromRaw(rawSet.coHalfspaceNormal(handle));
                 return new HalfSpace(normal);
 
+            case RawShapeType.Voxels:
+                const vox_data = rawSet.coVoxelData(handle);
+                const vox_size = rawSet.coVoxelSize(handle);
+                return new Voxels(vox_data, vox_size);
+
             case RawShapeType.TriMesh:
                 vs = rawSet.coVertices(handle);
                 indices = rawSet.coIndices(handle);
@@ -516,6 +521,7 @@ export enum ShapeType {
     RoundTriangle = 11,
     RoundConvexPolygon = 12,
     HalfSpace = 13,
+    Voxels = 14,
 }
 
 // #endif
@@ -544,6 +550,7 @@ export enum ShapeType {
     RoundCone = 15,
     RoundConvexPolyhedron = 16,
     HalfSpace = 17,
+    Voxels = 18,
 }
 
 // NOTE: this **must** match the bits in the HeightFieldFlags on the rust side.
@@ -1006,6 +1013,55 @@ export class Polyline extends Shape {
 
     public intoRaw(): RawShape {
         return RawShape.polyline(this.vertices, this.indices);
+    }
+}
+
+/**
+ * A shape made of voxels.
+ */
+export class Voxels extends Shape {
+    readonly type = ShapeType.Voxels;
+
+    /**
+     * The points or grid coordinates used to initialize the voxels.
+     */
+    data: Float32Array | Int32Array;
+
+    /**
+     * The dimensions of each voxel.
+     */
+    voxelSize: Vector;
+
+    /**
+     * Creates a new shape made of voxels.
+     *
+     * @param data - Defines the set of voxels. If this is a `Int32Array` then
+     *               each voxel is defined from its (signed) grid coordinates,
+     *               with 3 (resp 2) contiguous integers per voxel in 3D (resp 2D).
+     *               If this is a `Float32Array`, each voxel will be such that
+     *               they contain at least one point from this array (where each
+     *               point is defined from 3 (resp 2) contiguous numbers per point
+     *               in 3D (resp 2D).
+     * @param voxelSize - The size of each voxel.
+     */
+    constructor(data: Float32Array | Int32Array, voxelSize: Vector) {
+        super();
+        this.data = data;
+        this.voxelSize = voxelSize;
+    }
+
+    public intoRaw(): RawShape {
+        let voxelSize = VectorOps.intoRaw(this.voxelSize);
+
+        let result;
+        if (this.data instanceof Int32Array) {
+            result = RawShape.voxels(voxelSize, this.data);
+        } else {
+            result = RawShape.voxelsFromPoints(voxelSize, this.data);
+        }
+
+        voxelSize.free();
+        return result;
     }
 }
 

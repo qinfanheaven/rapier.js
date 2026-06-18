@@ -25,6 +25,25 @@ impl RawColliderSet {
         self.map(handle, |co| co.position().rotation.into())
     }
 
+    /// The translation of this collider relative to its parent rigid-body.
+    ///
+    /// Returns the `None` if it doesn’t have a parent.
+    pub fn coTranslationWrtParent(&self, handle: FlatHandle) -> Option<RawVector> {
+        self.map(handle, |co| {
+            co.position_wrt_parent()
+                .map(|pose| pose.translation.vector.into())
+        })
+    }
+
+    /// The orientation of this collider relative to its parent rigid-body.
+    ///
+    /// Returns the `None` if it doesn’t have a parent.
+    pub fn coRotationWrtParent(&self, handle: FlatHandle) -> Option<RawRotation> {
+        self.map(handle, |co| {
+            co.position_wrt_parent().map(|pose| pose.rotation.into())
+        })
+    }
+
     /// Sets the translation of this collider.
     ///
     /// # Parameters
@@ -127,6 +146,7 @@ impl RawColliderSet {
             ShapeType::HeightField => RawShapeType::HeightField,
             ShapeType::Compound => RawShapeType::Compound,
             ShapeType::HalfSpace => RawShapeType::HalfSpace,
+            ShapeType::Voxels => RawShapeType::Voxels,
             #[cfg(feature = "dim3")]
             ShapeType::ConvexPolyhedron => RawShapeType::ConvexPolyhedron,
             #[cfg(feature = "dim2")]
@@ -329,6 +349,138 @@ impl RawColliderSet {
                 .map(|b| b.border_radius = newBorderRadius),
             _ => None,
         });
+    }
+
+    pub fn coVoxelData(&self, handle: FlatHandle) -> Option<Vec<i32>> {
+        self.map(handle, |co| {
+            let vox = co.shape().as_voxels()?;
+            let coords = vox
+                .voxels()
+                .filter_map(|vox| (!vox.state.is_empty()).then_some(vox.grid_coords))
+                .flat_map(|ids| ids.coords.data.0[0])
+                .collect();
+            Some(coords)
+        })
+    }
+
+    pub fn coVoxelSize(&self, handle: FlatHandle) -> Option<RawVector> {
+        self.map(handle, |co| {
+            let vox = co.shape().as_voxels()?;
+            Some(RawVector(vox.voxel_size()))
+        })
+    }
+
+    #[cfg(feature = "dim2")]
+    pub fn coSetVoxel(&mut self, handle: FlatHandle, ix: i32, iy: i32, filled: bool) {
+        self.map_mut(handle, |co| {
+            if let Some(vox) = co.shape_mut().as_voxels_mut() {
+                vox.set_voxel(Point::new(ix, iy), filled);
+            }
+        })
+    }
+
+    #[cfg(feature = "dim3")]
+    pub fn coSetVoxel(&mut self, handle: FlatHandle, ix: i32, iy: i32, iz: i32, filled: bool) {
+        self.map_mut(handle, |co| {
+            if let Some(vox) = co.shape_mut().as_voxels_mut() {
+                vox.set_voxel(Point::new(ix, iy, iz), filled);
+            }
+        })
+    }
+
+    #[cfg(feature = "dim2")]
+    pub fn coPropagateVoxelChange(
+        &mut self,
+        handle1: FlatHandle,
+        handle2: FlatHandle,
+        ix: i32,
+        iy: i32,
+        shift_x: i32,
+        shift_y: i32,
+    ) {
+        self.map_pair_mut(handle1, handle2, |co1, co2| {
+            if let (Some(co1), Some(co2)) = (co1, co2) {
+                if let (Some(vox1), Some(vox2)) = (
+                    co1.shape_mut().as_voxels_mut(),
+                    co2.shape_mut().as_voxels_mut(),
+                ) {
+                    vox1.propagate_voxel_change(
+                        vox2,
+                        Point::new(ix, iy),
+                        Vector::new(shift_x, shift_y),
+                    );
+                }
+            }
+        })
+    }
+
+    #[cfg(feature = "dim3")]
+    pub fn coPropagateVoxelChange(
+        &mut self,
+        handle1: FlatHandle,
+        handle2: FlatHandle,
+        ix: i32,
+        iy: i32,
+        iz: i32,
+        shift_x: i32,
+        shift_y: i32,
+        shift_z: i32,
+    ) {
+        self.map_pair_mut(handle1, handle2, |co1, co2| {
+            if let (Some(co1), Some(co2)) = (co1, co2) {
+                if let (Some(vox1), Some(vox2)) = (
+                    co1.shape_mut().as_voxels_mut(),
+                    co2.shape_mut().as_voxels_mut(),
+                ) {
+                    vox1.propagate_voxel_change(
+                        vox2,
+                        Point::new(ix, iy, iz),
+                        Vector::new(shift_x, shift_y, shift_z),
+                    );
+                }
+            }
+        })
+    }
+
+    #[cfg(feature = "dim2")]
+    pub fn coCombineVoxelStates(
+        &mut self,
+        handle1: FlatHandle,
+        handle2: FlatHandle,
+        shift_x: i32,
+        shift_y: i32,
+    ) {
+        self.map_pair_mut(handle1, handle2, |co1, co2| {
+            if let (Some(co1), Some(co2)) = (co1, co2) {
+                if let (Some(vox1), Some(vox2)) = (
+                    co1.shape_mut().as_voxels_mut(),
+                    co2.shape_mut().as_voxels_mut(),
+                ) {
+                    vox1.combine_voxel_states(vox2, Vector::new(shift_x, shift_y));
+                }
+            }
+        })
+    }
+
+    #[cfg(feature = "dim3")]
+    pub fn coCombineVoxelStates(
+        &mut self,
+        handle1: FlatHandle,
+        handle2: FlatHandle,
+        shift_x: i32,
+        shift_y: i32,
+        shift_z: i32,
+    ) {
+        self.map_pair_mut(handle1, handle2, |co1, co2| {
+            if let (Some(co1), Some(co2)) = (co1, co2) {
+                if let (Some(vox1), Some(vox2)) = (
+                    co1.shape_mut().as_voxels_mut(),
+                    co2.shape_mut().as_voxels_mut(),
+                ) {
+                    vox1.combine_voxel_states(vox2, Vector::new(shift_x, shift_y, shift_z));
+                }
+            }
+        })
     }
 
     /// The vertices of this triangle mesh, polyline, convex polyhedron, segment, triangle or convex polyhedron, if it is one.

@@ -197,6 +197,7 @@ pub enum RawShapeType {
     RoundTriangle = 11,
     RoundConvexPolygon = 12,
     HalfSpace = 13,
+    Voxels = 14,
 }
 
 #[wasm_bindgen]
@@ -220,6 +221,7 @@ pub enum RawShapeType {
     RoundCone = 15,
     RoundConvexPolyhedron = 16,
     HalfSpace = 17,
+    Voxels = 18,
 }
 
 #[wasm_bindgen]
@@ -283,6 +285,19 @@ impl RawShape {
     #[cfg(feature = "dim3")]
     pub fn roundCone(halfHeight: f32, radius: f32, borderRadius: f32) -> Self {
         Self(SharedShape::round_cone(halfHeight, radius, borderRadius))
+    }
+
+    pub fn voxels(voxel_size: &RawVector, grid_coords: Vec<i32>) -> Self {
+        let grid_coords: Vec<_> = grid_coords
+            .chunks_exact(DIM)
+            .map(Point::from_slice)
+            .collect();
+        Self(SharedShape::voxels(voxel_size.0, &grid_coords))
+    }
+
+    pub fn voxelsFromPoints(voxel_size: &RawVector, points: Vec<f32>) -> Self {
+        let points: Vec<_> = points.chunks_exact(DIM).map(Point::from_slice).collect();
+        Self(SharedShape::voxels_from_points(voxel_size.0, &points))
     }
 
     pub fn polyline(vertices: Vec<f32>, indices: Vec<u32>) -> Self {
